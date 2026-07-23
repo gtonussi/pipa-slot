@@ -3,47 +3,66 @@ import { Application, Container, Graphics } from "pixi.js";
 export interface PopupOptions {
   panelWidth?: number;
   panelHeight?: number;
-  overlayColor?: number;
-  overlayAlpha?: number;
-  panelColor?: number;
+  innerPadding?: number;
+  borderTopColor?: number;
+  borderBottomColor?: number;
+  borderThickness?: number;
+  gradientTopColor?: number;
+  gradientBottomColor?: number;
   cornerRadius?: number;
 }
 
 const DEFAULTS: Required<PopupOptions> = {
-  panelWidth: 420,
-  panelHeight: 360,
-  overlayColor: 0x000000,
-  overlayAlpha: 0.6,
-  panelColor: 0x1b1b1f,
-  cornerRadius: 16,
+  panelWidth: 360,
+  panelHeight: 430,
+  innerPadding: 16,
+  borderTopColor: 0xffdf88,
+  borderBottomColor: 0xca8b2c,
+  borderThickness: 4,
+  gradientTopColor: 0x1a3470,
+  gradientBottomColor: 0x0e1d45,
+  cornerRadius: 18,
 };
 
-/** Simple popup chrome: a darkened full-screen overlay plus a centered panel. No slot logic lives here. */
+/** Gold-framed popup with an inner navy gradient panel. No slot logic lives here. */
 export class Popup {
   readonly view: Container;
   readonly content: Container;
   private readonly app: Application;
   private readonly options: Required<PopupOptions>;
-  private readonly overlay: Graphics;
+  private readonly frame: Graphics;
+  private readonly frameMask: Graphics;
   private readonly panel: Graphics;
+  private readonly panelMask: Graphics;
+  private contentView: Container | null = null;
 
   constructor(app: Application, options: PopupOptions = {}) {
     this.app = app;
     this.options = { ...DEFAULTS, ...options };
 
     this.view = new Container();
-    this.overlay = new Graphics();
+    this.frame = new Graphics();
+    this.frameMask = new Graphics();
     this.panel = new Graphics();
+    this.panelMask = new Graphics();
     this.content = new Container();
 
-    this.view.eventMode = "static";
-    this.view.addChild(this.overlay, this.panel, this.content);
+    this.view.addChild(
+      this.frame,
+      this.frameMask,
+      this.panel,
+      this.panelMask,
+      this.content,
+    );
+    this.frame.mask = this.frameMask;
+    this.panel.mask = this.panelMask;
 
     this.redraw();
     this.app.renderer.on("resize", this.redraw);
   }
 
   addContent(view: Container): void {
+    this.contentView = view;
     this.content.addChild(view);
     this.layoutContent(view);
   }
@@ -65,34 +84,84 @@ export class Popup {
     const {
       panelWidth,
       panelHeight,
-      overlayColor,
-      overlayAlpha,
-      panelColor,
+      innerPadding,
+      borderTopColor,
+      borderBottomColor,
+      borderThickness,
+      gradientTopColor,
+      gradientBottomColor,
       cornerRadius,
     } = this.options;
 
-    this.overlay.clear();
-    this.overlay
-      .rect(0, 0, this.app.screen.width, this.app.screen.height)
-      .fill({ color: overlayColor, alpha: overlayAlpha });
+    const panelX = (this.app.screen.width - panelWidth) / 2;
+    const panelY = (this.app.screen.height - panelHeight) / 2;
+
+    this.frame.clear();
+    this.frameMask.clear();
+    const borderSteps = 32;
+    for (let i = 0; i < borderSteps; i++) {
+      const t = i / Math.max(1, borderSteps - 1);
+      const color = lerpColor(borderTopColor, borderBottomColor, t);
+      const y = panelY + (panelHeight / borderSteps) * i;
+      const h = panelHeight / borderSteps + 1;
+      this.frame.rect(panelX, y, panelWidth, h).fill(color);
+    }
+    this.frameMask
+      .roundRect(panelX, panelY, panelWidth, panelHeight, cornerRadius)
+      .fill(0xffffff);
 
     this.panel.clear();
-    this.panel
-      .roundRect(0, 0, panelWidth, panelHeight, cornerRadius)
-      .fill(panelColor);
-    this.panel.position.set(
-      (this.app.screen.width - panelWidth) / 2,
-      (this.app.screen.height - panelHeight) / 2,
-    );
+    this.panelMask.clear();
+    const innerX = panelX + borderThickness;
+    const innerY = panelY + borderThickness;
+    const innerWidth = panelWidth - borderThickness * 2;
+    const innerHeight = panelHeight - borderThickness * 2;
+    const innerRadius = Math.max(0, cornerRadius - borderThickness);
+    const steps = 28;
 
-    this.content.position.copyFrom(this.panel.position);
+    for (let i = 0; i < steps; i++) {
+      const t = i / Math.max(1, steps - 1);
+      const color = lerpColor(gradientTopColor, gradientBottomColor, t);
+      const y = innerY + (innerHeight / steps) * i;
+      const h = innerHeight / steps + 1;
+      this.panel.rect(innerX, y, innerWidth, h).fill(color);
+    }
+    this.panelMask
+      .roundRect(innerX, innerY, innerWidth, innerHeight, innerRadius)
+      .fill(0xffffff);
+
+    this.content.position.set(innerX + innerPadding, innerY + innerPadding);
+    if (this.contentView) {
+      this.layoutContent(this.contentView);
+    }
   };
 
   private layoutContent(view: Container): void {
-    const { panelWidth, panelHeight } = this.options;
+    const { panelWidth, panelHeight, borderThickness, innerPadding } =
+      this.options;
+    const availableWidth = panelWidth - borderThickness * 2 - innerPadding * 2;
+    const availableHeight =
+      panelHeight - borderThickness * 2 - innerPadding * 2;
+    const bounds = view.getLocalBounds();
+
     view.position.set(
-      panelWidth / 2 - view.width / 2,
-      panelHeight / 2 - view.height / 2,
+      availableWidth / 2 - bounds.width / 2 - bounds.x,
+      availableHeight / 2 - bounds.height / 2 - bounds.y,
     );
   }
+}
+
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const b2 = Math.round(ab + (bb - ab) * t);
+
+  return (r << 16) + (g << 8) + b2;
 }

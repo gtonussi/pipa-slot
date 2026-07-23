@@ -1,4 +1,4 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Graphics, Text } from "pixi.js";
 import { gsap } from "gsap";
 import { Reel } from "./Reel";
 import { SpinButton } from "./SpinButton";
@@ -15,8 +15,8 @@ import type {
 
 const DEFAULTS = {
   visibleSymbols: 3,
-  symbolSize: 96,
-  reelSpacing: 16,
+  symbolSize: 70,
+  reelSpacing: 0,
   spinDuration: 1.6,
   reelStagger: 0.35,
   anticipationMultiplier: 1.8,
@@ -63,6 +63,7 @@ export class SlotMachine {
     );
 
     const symbolIds = this.config.symbols.map((symbol) => symbol.id);
+    const layout = new Container();
     const reelsContainer = new Container();
 
     for (let i = 0; i < this.config.reelsCount; i++) {
@@ -81,12 +82,52 @@ export class SlotMachine {
       this.reels.length * this.config.symbolSize +
       (this.reels.length - 1) * this.config.reelSpacing;
     const reelsHeight = this.config.visibleSymbols * this.config.symbolSize;
+    reelsContainer.y = 72;
 
-    this.spinButton = new SpinButton(reelsWidth, 48, "GIRAR");
-    this.spinButton.view.y = reelsHeight + 24;
+    const titleWidth = reelsWidth + 56;
+    const title = this.createTitle(titleWidth);
+    title.x = reelsWidth / 2 - titleWidth / 2;
+    title.y = 0;
+
+    const reelFrame = new Graphics()
+      .roundRect(
+        -8,
+        reelsContainer.y - 8,
+        reelsWidth + 16,
+        reelsHeight + 16,
+        10,
+      )
+      .fill(0x101010);
+
+    const paylineY = reelsContainer.y + reelsHeight / 2;
+    const payline = new Graphics();
+    payline
+      .rect(-16, paylineY - 1, reelsWidth + 32, 2)
+      .fill(0xff4d4d)
+      .circle(-16, paylineY, 5)
+      .fill(0xff4d4d)
+      .circle(reelsWidth + 16, paylineY, 5)
+      .fill(0xff4d4d);
+
+    this.spinButton = new SpinButton(132, 48, "GIRAR", {
+      backgroundColor: 0x53e4a9,
+      backgroundBottomColor: 0x23a26d,
+      textColor: 0x121212,
+      borderColor: 0x1f6d50,
+      borderThickness: 2,
+    });
+    this.spinButton.view.x = reelsWidth / 2 - this.spinButton.view.width / 2;
+    this.spinButton.view.y = reelsContainer.y + reelsHeight + 22;
     this.spinButton.onClick(() => this.handleSpinRequest());
 
-    this.view.addChild(reelsContainer, this.spinButton.view);
+    layout.addChild(
+      title,
+      reelFrame,
+      reelsContainer,
+      payline,
+      this.spinButton.view,
+    );
+    this.view.addChild(layout);
   }
 
   getState(): SlotMachineState {
@@ -179,4 +220,56 @@ export class SlotMachine {
       });
     });
   }
+
+  private createTitle(width: number): Container {
+    const titleContainer = new Container();
+    const plateFill = new Graphics();
+    const plateMask = new Graphics();
+    const plateBorder = new Graphics();
+    const titleTopGold = 0xffdf88;
+    const titleBottomGold = 0xca8b2c;
+    const steps = 18;
+    for (let i = 0; i < steps; i++) {
+      const t = i / Math.max(1, steps - 1);
+      const color = lerpColor(titleTopGold, titleBottomGold, t);
+      const y = (42 / steps) * i;
+      const h = 42 / steps + 1;
+      plateFill.rect(0, y, width, h).fill(color);
+    }
+    plateMask.roundRect(0, 0, width, 42, 10).fill(0xffffff);
+    plateBorder
+      .roundRect(0, 0, width, 42, 10)
+      .stroke({ color: 0x6f4f1d, width: 2 });
+    plateFill.mask = plateMask;
+
+    const text = new Text({
+      text: "SLOT MACHINE",
+      style: {
+        fill: 0x101010,
+        fontSize: 22,
+        fontWeight: "900",
+        letterSpacing: 2,
+      },
+    });
+    text.anchor.set(0.5);
+    text.position.set(width / 2, 21);
+
+    titleContainer.addChild(plateFill, plateMask, plateBorder, text);
+    return titleContainer;
+  }
+}
+
+function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const b2 = Math.round(ab + (bb - ab) * t);
+
+  return (r << 16) + (g << 8) + b2;
 }
