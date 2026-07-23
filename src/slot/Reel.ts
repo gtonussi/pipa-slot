@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite, Texture } from "pixi.js";
 import { gsap } from "gsap";
+import { buildReelStrip, REEL_FILLER_COUNT } from "./reelMapping";
 
 export interface ReelOptions {
   /** Ordered pool of symbol ids; order defines which symbols are "adjacent" on the strip. */
@@ -14,9 +15,6 @@ export interface ReelSpinOptions {
   duration: number;
   delayBeforeStart?: number;
 }
-
-/** How many filler symbols scroll past before the reel settles on its result. */
-const FILLER_COUNT = 18;
 
 /**
  * A single reel: a masked, fixed-size pool of sprites that is reused across every spin
@@ -40,7 +38,7 @@ export class Reel {
     this.visibleSymbols = options.visibleSymbols;
     this.symbolIds = options.symbolIds;
     this.textures = options.textures;
-    this.stripLength = FILLER_COUNT + this.visibleSymbols;
+    this.stripLength = REEL_FILLER_COUNT + this.visibleSymbols;
 
     this.view = new Container();
     this.track = new Container();
@@ -142,19 +140,7 @@ export class Reel {
 
   /** Builds a deterministic strip ending on `targetSymbolId` at the reel's result row. */
   private buildStrip(targetSymbolId: string): string[] {
-    const targetIndex = Math.max(0, this.symbolIds.indexOf(targetSymbolId));
-    const strip: string[] = [];
-
-    for (let i = 0; i < FILLER_COUNT; i++) {
-      strip.push(this.idAt(targetIndex - FILLER_COUNT + i));
-    }
-
-    const resultRow = Math.floor(this.visibleSymbols / 2);
-    for (let row = 0; row < this.visibleSymbols; row++) {
-      strip.push(this.idAt(targetIndex - resultRow + row));
-    }
-
-    return strip;
+    return buildReelStrip(this.symbolIds, targetSymbolId, this.visibleSymbols);
   }
 
   private applyTextures(strip: string[]): void {
