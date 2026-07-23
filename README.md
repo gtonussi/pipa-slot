@@ -2,6 +2,12 @@
 
 Popup de slot machine desenvolvido com TypeScript, PixiJS v8 e GSAP.
 
+## Guia
+
+Esta documentação traz informações do projeto, como arquitetura, tecnologias usadas, e detalhes de como instalar e rodar o projeto.
+
+**Para conferir as considerações do desenvolvedor, use o [PERSONAL.md](PERSONAL.md)**
+
 ## Funcionalidades
 
 - Resultado do giro determinístico (o resultado vem de fora do componente).
@@ -70,17 +76,6 @@ Cobertura atual:
 - `npm run preview`: executa o preview do build.
 - `npm test`: roda os testes uma vez.
 - `npm run test:watch`: roda os testes em modo watch.
-
-## Decisões de Projeto e Trade-offs
-
-- Resultado determinístico injetado externamente: a animação não decide o resultado.
-  Trade-off: quem chama o componente precisa fornecer resultados válidos.
-- Mapeamento dos rolos em função pura: melhora clareza e testabilidade.
-  Trade-off: adiciona uma camada entre fluxo e renderização.
-- Texturas placeholder geradas no código: simplifica setup sem depender de assets externos.
-  Trade-off: visual funcional, mas menos refinado.
-- Logger próprio no lugar de biblioteca externa: menor complexidade e menos dependências.
-  Trade-off: menos recursos avançados de observabilidade.
 
 ## Performance
 
