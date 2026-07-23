@@ -1,3 +1,5 @@
+import { Logger } from "../monitoring/Logger";
+
 export type SlotMachineState = "idle" | "spinning" | "settling" | "result";
 
 type StateListener = (state: SlotMachineState) => void;
@@ -16,6 +18,7 @@ const ALLOWED_TRANSITIONS: Record<SlotMachineState, SlotMachineState[]> = {
 export class SlotMachineStateMachine {
   private state: SlotMachineState = "idle";
   private readonly listeners = new Set<StateListener>();
+  private readonly logger = new Logger("StateMachine");
 
   getState(): SlotMachineState {
     return this.state;
@@ -57,10 +60,15 @@ export class SlotMachineStateMachine {
 
   private transition(next: SlotMachineState): void {
     if (!ALLOWED_TRANSITIONS[this.state].includes(next)) {
+      this.logger.warn("Invalid transition blocked", {
+        from: this.state,
+        to: next,
+      });
       throw new Error(
         `Invalid slot machine transition: ${this.state} -> ${next}`,
       );
     }
+    this.logger.info("Transition", { from: this.state, to: next });
     this.state = next;
     this.listeners.forEach((listener) => listener(this.state));
   }

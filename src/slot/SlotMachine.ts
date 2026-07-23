@@ -1,5 +1,6 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { gsap } from "gsap";
+import { Logger } from "../monitoring/Logger";
 import { Reel } from "./Reel";
 import { SpinButton } from "./SpinButton";
 import { SymbolFactory } from "./SymbolFactory";
@@ -33,6 +34,7 @@ type ResolvedConfig = SlotMachineConfig &
  */
 export class SlotMachine {
   readonly view: Container;
+  private readonly logger = new Logger("SlotMachine");
   private readonly reels: Reel[] = [];
   private readonly symbolFactory: SymbolFactory;
   private readonly spinButton: SpinButton;
@@ -41,6 +43,8 @@ export class SlotMachine {
   private readonly config: ResolvedConfig;
   private readonly validSymbolIds: Set<string>;
   private pendingSettleDelay: gsap.core.Tween | null = null;
+  private celebrationTween: gsap.core.Tween | null = null;
+  private isCelebrating = false;
 
   constructor(
     app: Application,
@@ -154,10 +158,21 @@ export class SlotMachine {
     if (invalid) {
       throw new Error(`Unknown symbol id in result: ${invalid}`);
     }
+    if (this.isCelebrating) {
+      this.logger.warn("Spin ignored: celebration animation in progress");
+      return;
+    }
     if (!this.stateMachine.canSpin()) {
+      this.logger.warn("Spin ignored: already spinning/settling", {
+        state: this.stateMachine.getState(),
+      });
       return;
     }
 
+    this.logger.info("Spin started", {
+      targetResult: result,
+      currentState: this.stateMachine.getState(),
+    });
     this.stateMachine.start();
     this.spinButton.setEnabled(false);
 
@@ -175,7 +190,12 @@ export class SlotMachine {
         index * this.config.reelStagger +
         anticipationBonus;
 
-      return this.reels[index].spinTo({ targetSymbolId, duration });
+      return this.reels[index].spinTo({ targetSymbolId, duration }).then(() => {
+        this.logger.info("Reel stopped", {
+          reelIndex: index,
+          symbol: targetSymbolId,
+        });
+      });
     });
 
     await Promise.all(spinPromises);
@@ -184,24 +204,69 @@ export class SlotMachine {
     await this.wait(0.2);
     this.stateMachine.complete();
 
+    const isWin = this.isCenterLineWin(result);
+    if (isWin) {
+      this.logger.info("Win detected: starting blink animation", { result });
+      this.isCelebrating = true;
+      try {
+        await this.playWinBlinkAnimation();
+      } finally {
+        this.isCelebrating = false;
+      }
+    }
+
     this.spinButton.setEnabled(true);
+    this.logger.info("Final result emitted", { result });
     this.resultListeners.forEach((listener) => listener(result));
+    this.logger.info("Spin ended", { state: this.stateMachine.getState() });
   }
 
   destroy(): void {
+    this.logger.info("Destroy lifecycle started");
     this.pendingSettleDelay?.kill();
     this.pendingSettleDelay = null;
+    this.logger.info("Pending settle tween cleared");
+    this.celebrationTween?.kill();
+    this.celebrationTween = null;
+    this.isCelebrating = false;
+    this.reels.forEach((reel) => {
+      reel.view.alpha = 1;
+    });
+    this.logger.info("Celebration tween cleared");
     this.reels.forEach((reel) => reel.destroy());
+    this.logger.info("Reels destroyed", { count: this.reels.length });
     this.spinButton.destroy();
+    this.logger.info("Spin button destroyed");
     this.symbolFactory.destroy();
+    this.logger.info("Symbol factory destroyed");
     this.stateMachine.destroy();
+    this.logger.info("State machine destroyed");
     this.resultListeners.clear();
     this.view.destroy({ children: true });
+    this.logger.info("Container destroyed");
+    this.logger.info("Destroy lifecycle completed");
   }
 
   private handleSpinRequest(): void {
-    if (!this.config.resultProvider) return;
-    if (!this.stateMachine.canSpin()) return;
+    this.logger.info("Spin button clicked", {
+      state: this.stateMachine.getState(),
+    });
+    if (!this.config.resultProvider) {
+      this.logger.warn("Spin ignored: missing resultProvider");
+      return;
+    }
+    if (this.isCelebrating) {
+      this.logger.warn(
+        "Spin ignored from button: celebration animation in progress",
+      );
+      return;
+    }
+    if (!this.stateMachine.canSpin()) {
+      this.logger.warn("Spin ignored from button: invalid state", {
+        state: this.stateMachine.getState(),
+      });
+      return;
+    }
     void this.spin(this.config.resultProvider());
   }
 
@@ -217,6 +282,48 @@ export class SlotMachine {
       this.pendingSettleDelay = gsap.delayedCall(seconds, () => {
         this.pendingSettleDelay = null;
         resolve();
+      });
+    });
+  }
+
+  private isCenterLineWin(result: SpinResult): boolean {
+    if (result.length === 0) return false;
+    return result.every((symbolId) => symbolId === result[0]);
+  }
+
+  private playWinBlinkAnimation(): Promise<void> {
+    const blinkDurationSeconds = 2;
+    const blinksPerSecond = 3;
+    const halfCycleSeconds = 1 / (blinksPerSecond * 2);
+    const halfCycles = Math.round(blinkDurationSeconds / halfCycleSeconds);
+    const targets = this.reels.map((reel) => reel.view);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finalize = () => {
+        if (settled) return;
+        settled = true;
+        this.celebrationTween = null;
+        targets.forEach((target) => {
+          target.alpha = 1;
+        });
+        this.logger.info("Win blink animation ended");
+        resolve();
+      };
+
+      this.logger.info("Win blink animation started", {
+        durationSeconds: blinkDurationSeconds,
+        blinksPerSecond,
+      });
+
+      this.celebrationTween = gsap.to(targets, {
+        alpha: 0.15,
+        duration: halfCycleSeconds,
+        ease: "none",
+        yoyo: true,
+        repeat: Math.max(0, halfCycles - 1),
+        onComplete: finalize,
+        onInterrupt: finalize,
       });
     });
   }

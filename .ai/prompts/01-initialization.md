@@ -31,4 +31,3 @@ Use GSAP para as animações.
 1- Create the project, dependencies, and folder structure
 2- Implement everything except for the unit tests
 3- Implement the unit tests
-4- Create a Dockerfile e make this application usable with Docker.

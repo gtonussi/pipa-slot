@@ -1,4 +1,5 @@
 import { Application, Container, Graphics } from "pixi.js";
+import { Logger } from "../monitoring/Logger";
 
 export interface PopupOptions {
   panelWidth?: number;
@@ -28,6 +29,7 @@ const DEFAULTS: Required<PopupOptions> = {
 export class Popup {
   readonly view: Container;
   readonly content: Container;
+  private readonly logger = new Logger("Popup");
   private readonly app: Application;
   private readonly options: Required<PopupOptions>;
   private readonly frame: Graphics;
@@ -69,15 +71,19 @@ export class Popup {
 
   show(): void {
     this.view.visible = true;
+    this.logger.info("Opened");
   }
 
   hide(): void {
     this.view.visible = false;
+    this.logger.info("Closed");
   }
 
   destroy(): void {
+    this.logger.info("Destroy requested");
     this.app.renderer.off("resize", this.redraw);
     this.view.destroy({ children: true });
+    this.logger.info("Destroyed");
   }
 
   private redraw = (): void => {
